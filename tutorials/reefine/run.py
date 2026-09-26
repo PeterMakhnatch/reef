@@ -253,9 +253,18 @@ def _wrapper_env():
 
 
 def reef_pi(args, cwd=None):
-    """One call of the installed wrapper, its lines echoed indented; the completed process."""
+    """One call of the installed wrapper, its lines echoed indented; the completed process.
+
+    stdin is /dev/null: ``pi -p`` reads piped stdin until EOF, so under a supervisor that
+    holds stdin open the session would wait forever instead of running the prompt.
+    """
     done = subprocess.run(
-        [str(INSTALL_ROOT / "reef-pi"), *args], cwd=cwd, env=_wrapper_env(), capture_output=True, text=True
+        [str(INSTALL_ROOT / "reef-pi"), *args],
+        cwd=cwd,
+        env=_wrapper_env(),
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
     )
     for line in (done.stdout + done.stderr).splitlines():
         print("  " + line, flush=True)
