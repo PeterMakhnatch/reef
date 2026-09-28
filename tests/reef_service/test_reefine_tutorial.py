@@ -281,6 +281,32 @@ def test_the_driver_reads_the_wrapper_as_it_prints_and_spools() -> None:
     assert "{time.time_ns():020d}" in wrapper and r"-(\d{20})-" in driver
 
 
+def test_the_wrapper_session_never_reads_the_drivers_stdin(run_module, monkeypatch, tmp_path) -> None:
+    """`pi -p` reads piped stdin until EOF, so a wrapper call that inherits a supervisor's open stdin waits forever;
+    the driver hands every reef-pi call /dev/null instead."""
+    fake = tmp_path / "reef-pi"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import os\n"
+        "print('stdin-is-devnull', os.fstat(0).st_rdev == os.stat(os.devnull).st_rdev)\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    monkeypatch.setattr(run_module, "INSTALL_ROOT", tmp_path)
+    # Stand in for a supervisor: the driver's own stdin is a pipe nobody closes, whatever stdin pytest was given.
+    read_end, write_end = os.pipe()
+    saved_stdin = os.dup(0)
+    os.dup2(read_end, 0)
+    try:
+        done = run_module.reef_pi(["-p", "hello"])
+    finally:
+        os.dup2(saved_stdin, 0)
+        for fd in (saved_stdin, read_end, write_end):
+            os.close(fd)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "stdin-is-devnull True"
+
+
 def test_the_workspace_fixture_fails_exactly_one_test() -> None:
     workspace = TUTORIAL / "demos" / "workspace"
     done = subprocess.run(
